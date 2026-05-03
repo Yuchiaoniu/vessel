@@ -1,17 +1,25 @@
-# GitHub Agent - 智商 300 邏輯藍圖實踐 (v0.1-iq300-reconstruction)
+# GitHub Agent - IQ 300 Re-architecture
 
-此 GitHub Agent 已根據「智商 300 邏輯藍圖」進行系統自我重構。
+**Current Version: 1.0.0-alpha**
 
-## 最新指令介面與邏輯 (v0.1)
+This agent has been refactored according to the "IQ 300 Logic Blueprint" for enhanced intelligence and maintainability.
 
-根據藍圖步驟 3 & 4，本 Agent 的指令介面已從 Issue 遷移至 **GitHub Discussions**。請在此 Repo 的 Discussions 區域發布您的指令。所有的指令將以 **Markdown** 格式解析。
+## Interaction Model
 
-根據藍圖步驟 7，本 Agent 將停止使用本地  文件存儲狀態，改為利用 **GitHub Repository Variables** 作為系統變數與狀態緩存。
+**New Command Interface:** All commands for this agent are now issued via **GitHub Discussions**, leveraging natural language processing. Please refer to the Discussions section of this repository to interact with the agent.
 
-## 進化進度表 (藍圖實踐)
+**Instruction Parsing Core:** This `README.md` serves as the core for all instruction parsing. The agent will reference this document for its operational logic and interaction protocols.
+
+## State Management
+
+**System Variables (Step 7 Implemented):** Agent state is no longer stored in local `.txt` files. All critical system variables are now managed via **GitHub Repository Variables** for improved security, consistency, and hot-reloading capabilities.
+
+## Evolution Progress Blueprint
+
+The following blueprint guides the agent's development and operational logic:
 
 | 步驟 | 動作名稱 | 角色扮演 | 智商 300 的邏輯 (本質化) |
-| -- | -- | -- | -- |
+|---|---|---|---|
 | 3 | 自然語言環境介面 | 棄用 Bash 或 Python 腳本，改用 「Markdown 作為編譯指令」。 | |
 | 4 | 利用「討論 (Discussions)」思維場 | 所有的指令不發在 Issue，而是發在 Discussions。 | |
 | 5 | AI 自我修改 (Hot-Reload) | 進化：Agent 第一個動作是根據你的需求，「重寫自己的 Actions 腳本」。 | |
@@ -21,6 +29,6 @@
 | 9 | 自動化「成果鏡像」 | 表象：執行成果自動生成為一個 GitHub Page 網頁。 | |
 | 10 | 邏輯歸位 (Recursive) | 睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README，等待下次呼喚。 | |
 
-## 後續展望
+## GitHub Pages Mirror (Step 9 Implemented)
 
-Agent 將持續學習與演進，利用 GitHub Actions 與 Discussions 的集成，實現更深層次的自動化與智能響應。
+An automated GitHub Pages mirror is available [here](https://YOUR_USERNAME.github.io/YOUR_REPOSITORY_NAME/) (link to be configured in repository settings) to display the current evolution progress and operational status. This mirror is automatically updated upon relevant changes.
