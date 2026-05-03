@@ -27,19 +27,18 @@ jobs:
       - name: Gemini Thinking & Execution
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 雙重賦值：同時滿足 GitHub Actions 與 gh CLI 的要求
           GITHUB_TOKEN: ${{ secrets.MY_PAT }}
           GH_TOKEN: ${{ secrets.MY_PAT }}
           D_NODE_ID: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
           EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body || github.event.discussion_comment.body }}
         run: |
           cat << 'EOF' > think.py
-          import os, json, requests
+          import os, json, requests, re
 
           api_key = os.environ["GEMINI_API_KEY"]
           event_body = os.environ["EVENT_BODY"]
           
-          # 模型自動探測
+          # 1. 動態偵測可用模型
           found_model = None
           for v in ["v1beta", "v1"]:
               try:
@@ -53,19 +52,21 @@ jobs:
 
           if not found_model: exit(1)
 
-          # 指令生成核心
+          # 2. 生成指令：嚴格要求純 Bash 輸出
           url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
-          prompt = f"你是一個 GitHub Agent。指令：{event_body}\n核心規則：只輸出純 Bash 指令，禁止輸出任何解釋文字。變數同步請用 'gh variable set'。"
+          prompt = f"指令：{event_body}\n核心規則：你是 Linux 終端機，只能輸出 Bash 代碼。禁止輸出任何自然語言說明。變數同步使用 'gh variable set 變數名 --body 內容'。禁止使用 --repository 參數。"
           
           response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
           data = response.json()
 
           if 'candidates' in data:
-              # 強制清理 Markdown 語法，防止 command not found
-              clean_text = data['candidates'][0]['content']['parts'][0]['text']
-              clean_text = clean_text.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
+              raw_text = data['candidates'][0]['content']['parts'][0]['text']
+              # 3. 雜訊淨化：移除 Markdown 與任何包含中文字符的行
+              clean_text = re.sub(r'```[a-zA-Z]*', '', raw_text).replace('```', '').strip()
+              lines = [line for line in clean_text.split('\n') if not re.search(r'[\u4e00-\u9fa5]', line)]
+              
               with open("exec.sh", "w") as f:
-                  f.write(clean_text)
+                  f.write('\n'.join(lines))
           EOF
 
           python3 think.py
@@ -73,16 +74,15 @@ jobs:
           if [ -f exec.sh ] && [ -s exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
-            
-            # 強制宣告權限
             export GH_TOKEN=${{ secrets.MY_PAT }}
             
             echo "--- 🧠 執行 AI 生成腳本 ---"
-            bash exec.sh
+            # 即使腳本中某行報錯，也繼續執行後續回報
+            bash exec.sh || echo "⚠️ 腳本執行中斷，部分指令可能未成功。"
             
-            # 穩定的 GraphQL 回報系統
+            # 4. 穩定的 GraphQL 回報系統
             if [ ! -z "$D_NODE_ID" ]; then
               gh api graphql -f query='mutation($body: String!, $id: ID!) { addDiscussionComment(input: {body: $body, discussionId: $id}) { comment { id } } }' \
-                -f body="✅ **進化節點更新**：環境變數已對齊。執行完成。" -f id="$D_NODE_ID"
+                -f body="✅ **執行報告**：腳本已完成過濾與部署。請檢查 README 或 Variables 狀態。" -f id="$D_NODE_ID"
             fi
           fi
