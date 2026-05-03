@@ -29,48 +29,35 @@ jobs:
 
           api_key = os.environ["GEMINI_API_KEY"]
           issue_body = os.environ["ISSUE_BODY"]
-          
-          # 第一步：動態獲取可用模型列表
-          list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-          models_data = requests.get(list_url).json()
-          
-          # 尋找支援 generateContent 的模型
-          available_model = None
-          if 'models' in models_data:
-              for m in models_data['models']:
-                  if 'generateContent' in m['supportedGenerationMethods']:
-                      # 優先選擇 flash，沒有的話就選第一個可用的
-                      available_model = m['name']
-                      if 'gemini-1.5-flash' in m['name']:
-                          break
-          
-          if not available_model:
-              print(f"無法找到可用模型。API 回傳：{json.dumps(models_data, indent=2)}")
-              exit(1)
-          
-          print(f"使用模型: {available_model}")
 
-          # 第二步：使用找到的模型路徑進行請求
-          url = f"https://generativelanguage.googleapis.com/v1beta/{available_model}:generateContent?key={api_key}"
+          # 先列出所有可用模型，這能確保我們不會再抓到 404
+          list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+          l_resp = requests.get(list_url).json()
           
-          prompt = f"""
-          你是一個 GitHub Agent。主人指令：{issue_body}
-          請寫出 bash 指令達成目標（包含 git add/commit/push）。
-          只輸出代碼，不要解釋。
-          """
+          # 尋找包含 'gemini-1.5-flash' 字樣的模型 ID
+          model_name = "models/gemini-1.5-flash" # 預設值
+          if 'models' in l_resp:
+              for m in l_resp['models']:
+                  if 'gemini-1.5-flash' in m['name']:
+                      model_name = m['name']
+                      break
+          
+          print(f"確定的模型路徑: {model_name}")
+
+          url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={api_key}"
+          
+          prompt = f"你是一個 GitHub Agent。主人指令：{issue_body}\n請輸出達成目標的 bash 指令（包含 git config/add/commit/push），只輸出代碼，不要解釋。"
           
           payload = {"contents": [{"parts": [{"text": prompt}]}]}
           response = requests.post(url, json=payload)
           data = response.json()
 
-          try:
-              raw_text = data['candidates'][0]['content']['parts'][0]['text']
-              clean_text = raw_text.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
+          if 'candidates' in data:
+              text = data['candidates'][0]['content']['parts'][0]['text']
               with open("exec.sh", "w") as f:
-                  f.write(clean_text)
-          except Exception as e:
-              print(f"執行請求失敗。回傳內容：{json.dumps(data, indent=2)}")
-              raise e
+                  f.write(text.replace('```bash', '').replace('```sh', '').replace('```', '').strip())
+          else:
+              print(f"API 回傳異常：{json.dumps(data, indent=2)}")
           EOF
 
           python3 think.py
@@ -78,5 +65,8 @@ jobs:
           if [ -f exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
-            bash exec.sh
+            # 確保內容不是空的才執行
+            if [ -s exec.sh ]; then
+              bash exec.sh
+            fi
           fi
