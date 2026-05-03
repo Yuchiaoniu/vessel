@@ -29,35 +29,42 @@ jobs:
 
           api_key = os.environ["GEMINI_API_KEY"]
           issue_body = os.environ["ISSUE_BODY"]
+          
+          # 定義所有可能的路徑組合
+          versions = ["v1", "v1beta"]
+          models = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-pro"]
+          
+          success = False
+          last_error = None
 
-          # 先列出所有可用模型，這能確保我們不會再抓到 404
-          list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-          l_resp = requests.get(list_url).json()
-          
-          # 尋找包含 'gemini-1.5-flash' 字樣的模型 ID
-          model_name = "models/gemini-1.5-flash" # 預設值
-          if 'models' in l_resp:
-              for m in l_resp['models']:
-                  if 'gemini-1.5-flash' in m['name']:
-                      model_name = m['name']
-                      break
-          
-          print(f"確定的模型路徑: {model_name}")
-
-          url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={api_key}"
-          
           prompt = f"你是一個 GitHub Agent。主人指令：{issue_body}\n請輸出達成目標的 bash 指令（包含 git config/add/commit/push），只輸出代碼，不要解釋。"
-          
           payload = {"contents": [{"parts": [{"text": prompt}]}]}
-          response = requests.post(url, json=payload)
-          data = response.json()
 
-          if 'candidates' in data:
-              text = data['candidates'][0]['content']['parts'][0]['text']
-              with open("exec.sh", "w") as f:
-                  f.write(text.replace('```bash', '').replace('```sh', '').replace('```', '').strip())
-          else:
-              print(f"API 回傳異常：{json.dumps(data, indent=2)}")
+          print("--- 開始全路徑掃描 ---")
+          for v in versions:
+              for m in models:
+                  url = f"https://generativelanguage.googleapis.com/{v}/{m}:generateContent?key={api_key}"
+                  print(f"嘗試路徑: {v}/{m} ...", end=" ")
+                  try:
+                      response = requests.post(url, json=payload, timeout=10)
+                      data = response.json()
+                      if 'candidates' in data:
+                          text = data['candidates'][0]['content']['parts'][0]['text']
+                          with open("exec.sh", "w") as f:
+                              f.write(text.replace('```bash', '').replace('```sh', '').replace('```', '').strip())
+                          print("成功！")
+                          success = True
+                          break
+                      else:
+                          print(f"失敗 (HTTP {response.status_code})")
+                          last_error = data
+                  except Exception as e:
+                      print(f"錯誤: {e}")
+              if success: break
+
+          if not success:
+              print(f"所有路徑均失敗。最後回傳：{json.dumps(last_error, indent=2)}")
+              exit(1)
           EOF
 
           python3 think.py
@@ -65,8 +72,8 @@ jobs:
           if [ -f exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
-            # 確保內容不是空的才執行
-            if [ -s exec.sh ]; then
-              bash exec.sh
-            fi
+            # 印出指令內容以便偵錯
+            echo "--- 執行的指令內容 ---"
+            cat exec.sh
+            bash exec.sh
           fi
