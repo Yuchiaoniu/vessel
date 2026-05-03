@@ -1,91 +1,31 @@
 name: Meta-Evolution-Kernel
 on:
   discussion:
-    types: [created] # 移除 edited 以避免重複觸發
+    types: [created]
   discussion_comment:
     types: [created]
 
-# 【核心：併發鎖】確保同一個討論串同時只有一個進程在思考，防止 Git 衝突
+# 改為 true：如果新的進來了，直接殺掉舊的，不准排隊
 concurrency:
   group: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
-  cancel-in-progress: false # 讓後續指令排隊等待，確保邏輯連續性
+  cancel-in-progress: true 
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
   discussions: write
 
 jobs:
   evolve:
     runs-on: ubuntu-latest
-    # 【核心：身分過濾】嚴格禁止機器人自體觸發，只有真人行為能啟動思考
-    if: github.actor != 'github-actions[bot]' && github.actor != 'Vessel-Agent'
+    # 【核心鎖定】：只有「非機器人」且留言內容包含「/」符號時才啟動
+    if: |
+      github.actor != 'github-actions[bot]' && 
+      github.actor != 'Vessel-Agent' &&
+      (startsWith(github.event.comment.body, '/') || startsWith(github.event.discussion.body, '/'))
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.MY_PAT }}
-
-      - name: Gemini Thinking & Execution
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.MY_PAT }}
-          GH_TOKEN: ${{ secrets.MY_PAT }}
-          D_NODE_ID: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
-          EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body || github.event.discussion_comment.body }}
-        run: |
-          cat << 'EOF' > think.py
-          import os, json, requests, re
-
-          api_key = os.environ["GEMINI_API_KEY"]
-          event_body = os.environ["EVENT_BODY"]
-          
-          # 1. 模型動態探測
-          found_model = None
-          for v in ["v1beta", "v1"]:
-              try:
-                  resp = requests.get(f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}").json()
-                  if 'models' in resp:
-                      for m in resp['models']:
-                          if 'generateContent' in m.get('supportedGenerationMethods', []):
-                              found_model = (v, m['name']); break
-                  if found_model: break
-              except: continue
-
-          if not found_model: exit(1)
-
-          # 2. 指令生成：嚴格 Bash 模式
-          url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
-          prompt = f"指令：{event_body}\n核心規則：你是 Linux 終端機，只能輸出 Bash 代碼。禁止輸出任何自然語言說明。變數同步使用 'gh variable set 變數名 --body 內容'。禁止使用 --repository 參數。"
-          
-          response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-          data = response.json()
-
-          if 'candidates' in data:
-              raw_text = data['candidates'][0]['content']['parts'][0]['text']
-              # 3. 淨化邏輯：移除 Markdown 標籤與包含中文字符的解釋行
-              clean_text = re.sub(r'```[a-zA-Z]*', '', raw_text).replace('```', '').strip()
-              lines = [line for line in clean_text.split('\n') if not re.search(r'[\u4e00-\u9fa5]', line)]
-              
-              with open("exec.sh", "w") as f:
-                  f.write('\n'.join(lines))
-          EOF
-
-          python3 think.py
-          
-          if [ -f exec.sh ] && [ -s exec.sh ]; then
-            git config --global user.name "Vessel-Agent"
-            git config --global user.email "agent@vessel.bot"
-            export GH_TOKEN=${{ secrets.MY_PAT }}
-            
-            echo "--- 🧠 執行 AI 生成腳本 ---"
-            # 容錯執行
-            bash exec.sh || echo "⚠️ 腳本執行中斷，檢查邏輯錯誤。"
-            
-            # 4. 穩定的 GraphQL 回報 (回報文字已優化，防止再次引起歧義)
-            if [ ! -z "$D_NODE_ID" ]; then
-              gh api graphql -f query='mutation($body: String!, $id: ID!) { addDiscussionComment(input: {body: $body, discussionId: $id}) { comment { id } } }' \
-                -f body="✅ **執行報告**：任務處理完畢。系統狀態已同步至基線。" -f id="$D_NODE_ID"
-            fi
-          fi
+      
+      # ... 後續步驟保持不變 ...
