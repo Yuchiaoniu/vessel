@@ -29,13 +29,13 @@ jobs:
           # 同時獲取 Issue 或 Discussion 的內容
           EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body }}
         run: |
+          run: |
           cat << 'EOF' > think.py
           import os, json, requests
 
           api_key = os.environ["GEMINI_API_KEY"]
           event_body = os.environ["EVENT_BODY"]
           
-          # 自動鎖定模型
           found_model = None
           for v in ["v1beta", "v1"]:
               resp = requests.get(f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}").json()
@@ -48,10 +48,9 @@ jobs:
 
           if not found_model: exit(1)
 
-          # 生成指令：要求 AI 必須包含 gh variable set 來同步狀態
           version, model_path = found_model
           url = f"https://generativelanguage.googleapis.com/{version}/{model_path}:generateContent?key={api_key}"
-          prompt = f"你是一個 GitHub Agent。當前指令：{event_body}\n請輸出完成任務的 bash 指令。如果是更新狀態，請使用 'gh variable set 名稱 --body 內容'。只輸出代碼，不要解釋。"
+          prompt = f"你是一個 GitHub Agent。指令：{event_body}\n請輸出 bash 指令。若要同步狀態請用 'gh variable set 名稱 --body 內容'。只輸出代碼。"
           
           response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
           data = response.json()
@@ -67,11 +66,16 @@ jobs:
           if [ -f exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
-            # 使用 GITHUB_TOKEN 讓 gh cli 具備權限
-            echo "${GITHUB_TOKEN}" | gh auth login --with-token
+            
+            # --- 關鍵修正：移除 gh auth login，直接賦予變數並執行 ---
+            export GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            echo "--- 正在執行 AI 生成的指令 ---"
             bash exec.sh
-            # 任務完成後，自動在來源處留言回報 (如果是 Issue)
+            
+            # 回報進度
             if [ "${{ github.event_name }}" == "issue_comment" ] || [ "${{ github.event_name }}" == "issues" ]; then
-              gh issue comment ${{ github.event.issue.number }} --body "✅ 任務執行完成，邏輯已同步至 README 與 Variables。"
+              gh issue comment ${{ github.event.issue.number }} --body "✅ 系統已進化。權限與變數同步邏輯已修正。"
+            elif [ "${{ github.event_name }}" == "discussion_comment" ] || [ "${{ github.event_name }}" == "discussion" ]; then
+              gh discussion comment ${{ github.event.discussion.number }} --body "✅ 收到神諭，Discussions 通訊渠道已完全激活。"
             fi
           fi
