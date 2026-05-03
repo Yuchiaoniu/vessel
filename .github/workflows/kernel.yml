@@ -1,11 +1,10 @@
 name: Meta-Evolution-Kernel
 on:
   discussion:
-    types: [created]
+    types: [created, edited]
   discussion_comment:
-    types: [created]
+    types: [created, edited]
 
-# 併發控制：確保同一個討論串中，新的指令會取代舊的，防止 Git 衝突
 concurrency:
   group: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
   cancel-in-progress: true 
@@ -19,11 +18,12 @@ permissions:
 jobs:
   evolve:
     runs-on: ubuntu-latest
-    # 【指令鎖】：必須以 "/" 開頭才是指令，且排除機器人，防止無限循環
+    # 【修正後的邏輯】：
+    # 只要不是機器人發的，且內容包含 "/"，就必須啟動。
     if: |
-      (startsWith(github.event.comment.body, '/') || startsWith(github.event.discussion.body, '/')) &&
       github.actor != 'github-actions[bot]' && 
-      github.actor != 'Vessel-Agent'
+      github.actor != 'Vessel-Agent' &&
+      (contains(github.event.comment.body, '/') || contains(github.event.discussion.body, '/'))
     
     steps:
       - name: Checkout Code
@@ -37,15 +37,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.MY_PAT }}
           GH_TOKEN: ${{ secrets.MY_PAT }}
           D_NODE_ID: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
-          EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body || github.event.discussion_comment.body }}
+          EVENT_BODY: ${{ github.event.comment.body || github.event.discussion.body || github.event.discussion_comment.body }}
         run: |
           cat << 'EOF' > think.py
           import os, json, requests, re
 
-          api_key = os.environ["GEMINI_API_KEY"]
-          event_body = os.environ["EVENT_BODY"]
+          api_key = os.environ.get("GEMINI_API_KEY")
+          event_body = os.environ.get("EVENT_BODY", "")
           
-          # 1. 自動探測可用的 Gemini 模型
           found_model = None
           for v in ["v1beta", "v1"]:
               try:
@@ -57,48 +56,41 @@ jobs:
                   if found_model: break
               except: continue
 
-          if not found_model: exit(1)
+          if not found_model:
+              print("Error: No Model Found")
+              exit(1)
 
-          # 2. 設定 AI 思考邏輯
           url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
-          prompt = f"指令：{event_body}\n核心規則：你是 Linux 終端機，只能輸出 Bash 代碼。禁止輸出任何自然語言說明。變數同步使用 'gh variable set 變數名 --body 內容'。禁止使用 --repository 參數。"
+          prompt = f"指令：{event_body}\n規則：你是 Linux 專家。只輸出 Bash 代碼，禁止廢話。必須包含 git add, commit, push 指令來更新 README.md。"
           
-          response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-          data = response.json()
-
-          if 'candidates' in data:
+          try:
+              response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+              data = response.json()
               raw_text = data['candidates'][0]['content']['parts'][0]['text']
-              # 移除 Markdown 代碼塊標籤
               clean_text = re.sub(r'```[a-zA-Z]*', '', raw_text).replace('```', '').strip()
               
-              # 【重點修改：白名單過濾】
-              # 以前是過濾中文，現在改為檢查每一行是否以合法的 Bash 指令開頭
-              bash_whitelist = ["git", "gh", "echo", "printf", "cd", "rm", "python", "cat", "mv", "mkdir", "ls", "export"]
-              lines = []
-              for line in clean_text.split('\n'):
-                  stripped = line.strip()
-                  # 只要是以白名單指令或路徑開頭的行，就予以保留，不論內容是否有中文
-                  if any(stripped.startswith(cmd) for cmd in bash_whitelist) or stripped.startswith("./"):
-                      lines.append(line)
-              
+              # 這裡採用更寬鬆的保留策略，確保指令不被誤刪
               with open("exec.sh", "w") as f:
-                  f.write('\n'.join(lines))
+                  f.write(clean_text)
+          except Exception as e:
+              print(f"Thinking Error: {e}")
           EOF
 
           python3 think.py
           
-          # 3. 執行生成的腳本
           if [ -f exec.sh ] && [ -s exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
             export GH_TOKEN=${{ secrets.MY_PAT }}
             
-            echo "--- 🧠 執行 AI 生成腳本 ---"
-            bash exec.sh || echo "⚠️ 部分指令執行中斷。"
+            echo "--- 🧠 AI 生成的指令如下 ---"
+            cat exec.sh
+            echo "--------------------------"
             
-            # 4. 回報執行結果
+            bash exec.sh || echo "⚠️ 執行過程中有指令出錯，請檢查上方的指令內容。"
+            
             if [ ! -z "$D_NODE_ID" ]; then
               gh api graphql -f query='mutation($body: String!, $id: ID!) { addDiscussionComment(input: {body: $body, discussionId: $id}) { comment { id } } }' \
-                -f body="✅ **執行報告**：任務處理完畢。Kernel v1.3 穩定運作中。" -f id="$D_NODE_ID"
+                -f body="✅ **執行完畢**。請檢查檔案是否更新。" -f id="$D_NODE_ID"
             fi
           fi
