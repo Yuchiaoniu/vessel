@@ -1,0 +1,53 @@
+name: Meta-Evolution-Kernel
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Gemini Thinking & Execution
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_BODY: ${{ github.event.issue.body || github.event.comment.body }}
+        run: |
+          # 1. 建立一個簡單的 Python 環境來呼叫 Gemini
+          python3 -m pip install -q -U google-generativeai
+
+          # 2. 執行核心自舉腳本 (這段指令告訴 Gemini：讀取指令，並產出要執行的 Bash)
+          python3 <<EOF
+          import google.generativeai as genai
+          import os
+          import subprocess
+
+          genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+          model = genai.GenerativeModel('gemini-1.5-flash')
+          
+          # 提供環境上下文給 Gemini
+          context = f"""
+          你是一個能自我修改的 GitHub Agent。目前的環境是 Ubuntu 虛擬機。
+          主人的指令是：{os.environ["ISSUE_BODY"]}
+          
+          請只輸出可以在 bash 中執行的指令（包含 git commit），不要有任何解釋。
+          如果需要寫代碼，請使用 'cat <<EOT > filename' 的方式寫入檔案。
+          執行完畢後，請回覆執行結果到 Issue 中。
+          """
+          
+          response = model.generate_content(context)
+          with open("exec.sh", "w") as f:
+              f.write(response.text.strip().replace('```bash', '').replace('```', ''))
+          EOF
+
+          # 3. 執行 Gemini 生成的進化指令
+          bash exec.sh
