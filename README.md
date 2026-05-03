@@ -4,7 +4,7 @@
 
 ### Interaction Model (Implemented Steps 3 & 4)
 This agent now primarily receives instructions via **GitHub Discussions**.
-The `README.md.md.md.md.md.md.md.md` serves as the core "command parsing" mechanism.
+The `README.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md` serves as the core "command parsing" mechanism.
 Please post your requests in a new discussion thread. The agent will monitor discussions for semantic triggers (Step 8, pending).
 
 ### System State Management (Implemented Step 7)
@@ -19,7 +19,7 @@ You can view the progress table at: [Link to GitHub Pages (e.g., `https://<YOUR_
 - **Step 3 & 4: Natural Language Environment Interface & Discussions as Command Hub:**
     - Abandoned bash/Python scripts for primary command input.
     - All new instructions should be posted as GitHub Discussions.
-    - `README.md.md.md.md.md.md.md.md` will be updated to reflect agent logic and status.
+    - `README.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md` will be updated to reflect agent logic and status.
 - **Step 7: Utilize Environment Variables for Caching (Neural Synapse):**
     - All system states are now stored as GitHub Repository Variables instead of local disk files.
     - Example: `SYSTEM_STATE` variable set to "initialized".
@@ -27,7 +27,7 @@ You can view the progress table at: [Link to GitHub Pages (e.g., `https://<YOUR_
     - Created a `docs/` directory with `index.html` to display the "Evolution Progress Table".
     - GitHub Pages is configured to serve content from `docs/` on the `main` branch.
 - **Step 10: Logic Recursion (Sleep):**
-    - All current agent logic and status have been compressed and updated into this `README.md.md.md.md.md.md.md.md` file, awaiting the next instruction.
+    - All current agent logic and status have been compressed and updated into this `README.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md` file, awaiting the next instruction.
 
 ---
 
@@ -42,7 +42,7 @@ You can view the progress table at: [Link to GitHub Pages (e.g., `https://<YOUR_
 | 7 | 利用「環境變量」做緩存 | 神經突觸：所有的狀態不存硬碟，存入 Repo 的 Variables 系統。 | | ✅ Implemented |
 | 8 | 語義化觸發 (Linguistic Trigger) | 潛意識：只要你在 Discussions 裡達成某種語義共識，Actions 自動感知。 | | ⏳ Pending |
 | 9 | 自動化「成果鏡像」 | 表象：執行成果自動生成為一個 GitHub Page 網頁。 | | ✅ Implemented |
-| 10 | 邏輯歸位 (Recursive) | 睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README.md.md.md.md.md.md.md，等待下次呼喚。 | | ✅ Implemented |
+| 10 | 邏輯歸位 (Recursive) | 睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README.md.md.md.md.md.md.md.md.md.md.md.md.md.md.md，等待下次呼喚。 | | ✅ Implemented |
 
 ## Important Note on Discussions
 
