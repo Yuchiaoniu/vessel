@@ -43,3 +43,7 @@ You can view the progress table at: [Link to GitHub Pages (e.g., `https://<YOUR_
 | 8 | 語義化觸發 (Linguistic Trigger) | 潛意識：只要你在 Discussions 裡達成某種語義共識，Actions 自動感知。 | | ⏳ Pending |
 | 9 | 自動化「成果鏡像」 | 表象：執行成果自動生成為一個 GitHub Page 網頁。 | | ✅ Implemented |
 | 10 | 邏輯歸位 (Recursive) | 睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README.md，等待下次呼喚。 | | ✅ Implemented |
+
+## Important Note on Discussions
+
+Due to current project policies and resource allocation, GitHub Discussions for this repository are not actively monitored or responded to. We encourage users to utilize the [Issues](https://github.com/Yuchiaoniu/vessel/issues) section for bug reports, feature requests, or general inquiries that require a response. Direct replies within the Discussions tab will not be acknowledged. Thank you for your understanding.
