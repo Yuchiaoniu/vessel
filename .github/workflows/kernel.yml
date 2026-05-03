@@ -27,8 +27,9 @@ jobs:
       - name: Gemini Thinking & Execution
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # 雙重賦值：同時滿足 GitHub Actions 與 gh CLI 的要求
+          GITHUB_TOKEN: ${{ secrets.MY_PAT }}
           GH_TOKEN: ${{ secrets.MY_PAT }}
-          # 這裡預先抓好 Node ID 傳給 Python/Bash
           D_NODE_ID: ${{ github.event.discussion.node_id || github.event.discussion_comment.discussion.node_id }}
           EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body || github.event.discussion_comment.body }}
         run: |
@@ -38,7 +39,7 @@ jobs:
           api_key = os.environ["GEMINI_API_KEY"]
           event_body = os.environ["EVENT_BODY"]
           
-          # 找模型
+          # 模型自動探測
           found_model = None
           for v in ["v1beta", "v1"]:
               try:
@@ -52,16 +53,19 @@ jobs:
 
           if not found_model: exit(1)
 
-          # 構建神諭
+          # 指令生成核心
           url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
-          prompt = f"你是一個 GitHub Agent。指令：{event_body}\n請輸出 Bash 代碼，不含 Markdown。使用 'gh variable set' 同步狀態。"
+          prompt = f"你是一個 GitHub Agent。指令：{event_body}\n核心規則：只輸出純 Bash 指令，禁止輸出任何解釋文字。變數同步請用 'gh variable set'。"
           
           response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
           data = response.json()
 
           if 'candidates' in data:
+              # 強制清理 Markdown 語法，防止 command not found
+              clean_text = data['candidates'][0]['content']['parts'][0]['text']
+              clean_text = clean_text.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
               with open("exec.sh", "w") as f:
-                  f.write(data['candidates'][0]['content']['parts'][0]['text'].replace('```bash', '').replace('```', '').strip())
+                  f.write(clean_text)
           EOF
 
           python3 think.py
@@ -69,11 +73,16 @@ jobs:
           if [ -f exec.sh ] && [ -s exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
+            
+            # 強制宣告權限
+            export GH_TOKEN=${{ secrets.MY_PAT }}
+            
+            echo "--- 🧠 執行 AI 生成腳本 ---"
             bash exec.sh
             
-            # 這是關鍵：手動使用環境變數執行 GraphQL 回報，不再依賴 AI 生成這段
+            # 穩定的 GraphQL 回報系統
             if [ ! -z "$D_NODE_ID" ]; then
               gh api graphql -f query='mutation($body: String!, $id: ID!) { addDiscussionComment(input: {body: $body, discussionId: $id}) { comment { id } } }' \
-                -f body="✅ 邏輯注入成功。系統當前已就緒，等待商轉指令。" -f id="$D_NODE_ID"
+                -f body="✅ **進化節點更新**：環境變數已對齊。執行完成。" -f id="$D_NODE_ID"
             fi
           fi
