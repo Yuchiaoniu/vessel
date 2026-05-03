@@ -3,7 +3,6 @@ import os, json, requests, re
 api_key = os.environ["GEMINI_API_KEY"]
 event_body = os.environ["EVENT_BODY"]
 
-# 1. 動態偵測可用模型
 found_model = None
 for v in ["v1beta", "v1"]:
     try:
@@ -17,7 +16,6 @@ for v in ["v1beta", "v1"]:
 
 if not found_model: exit(1)
 
-# 2. 生成指令：嚴格要求純 Bash 輸出
 url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
 prompt = f"指令：{event_body}\n核心規則：你是 Linux 終端機，只能輸出 Bash 代碼。禁止輸出任何自然語言說明。變數同步使用 'gh variable set 變數名 --body 內容'。禁止使用 --repository 參數。"
 
@@ -26,7 +24,6 @@ data = response.json()
 
 if 'candidates' in data:
     raw_text = data['candidates'][0]['content']['parts'][0]['text']
-    # 3. 雜訊淨化：移除 Markdown 與任何包含中文字符的行
     clean_text = re.sub(r'```[a-zA-Z]*', '', raw_text).replace('```', '').strip()
     lines = [line for line in clean_text.split('\n') if not re.search(r'[\u4e00-\u9fa5]', line)]
     
