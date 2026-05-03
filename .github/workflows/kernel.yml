@@ -4,6 +4,10 @@ on:
     types: [opened, edited]
   issue_comment:
     types: [created]
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -22,51 +26,40 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_BODY: ${{ github.event.issue.body || github.event.comment.body }}
+          # 同時獲取 Issue 或 Discussion 的內容
+          EVENT_BODY: ${{ github.event.issue.body || github.event.comment.body || github.event.discussion.body }}
         run: |
           cat << 'EOF' > think.py
-          import os
-          import json
-          import requests
+          import os, json, requests
 
           api_key = os.environ["GEMINI_API_KEY"]
-          issue_body = os.environ["ISSUE_BODY"]
+          event_body = os.environ["EVENT_BODY"]
           
-          # 1. 徹底檢查所有版本的所有模型
+          # 自動鎖定模型
           found_model = None
           for v in ["v1beta", "v1"]:
-              list_url = f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}"
-              resp = requests.get(list_url).json()
+              resp = requests.get(f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}").json()
               if 'models' in resp:
                   for m in resp['models']:
-                      # 優先找 flash，其次找 pro，只要能生成內容就行
                       if 'generateContent' in m.get('supportedGenerationMethods', []):
                           found_model = (v, m['name'])
-                          if 'flash' in m['name'].lower():
-                              break
+                          if 'flash' in m['name'].lower(): break
               if found_model: break
 
-          if not found_model:
-              print("關鍵錯誤：此 API Key 找不到任何支援生成內容的模型。請確認 AI Studio 權限。")
-              exit(1)
+          if not found_model: exit(1)
 
+          # 生成指令：要求 AI 必須包含 gh variable set 來同步狀態
           version, model_path = found_model
-          print(f"成功鎖定目標：版本={version}, 路徑={model_path}")
-
-          # 2. 執行指令生成
           url = f"https://generativelanguage.googleapis.com/{version}/{model_path}:generateContent?key={api_key}"
-          prompt = f"你是一個 GitHub Agent。主人指令：{issue_body}\n請輸出達成目標的 bash 指令（需含 git config/add/commit/push），只輸出代碼，不要解釋。"
+          prompt = f"你是一個 GitHub Agent。當前指令：{event_body}\n請輸出完成任務的 bash 指令。如果是更新狀態，請使用 'gh variable set 名稱 --body 內容'。只輸出代碼，不要解釋。"
           
-          payload = {"contents": [{"parts": [{"text": prompt}]}]}
-          response = requests.post(url, json=payload)
+          response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
           data = response.json()
 
           if 'candidates' in data:
               text = data['candidates'][0]['content']['parts'][0]['text']
               with open("exec.sh", "w") as f:
                   f.write(text.replace('```bash', '').replace('```sh', '').replace('```', '').strip())
-          else:
-              print(f"請求失敗：{json.dumps(data, indent=2)}")
           EOF
 
           python3 think.py
@@ -74,6 +67,11 @@ jobs:
           if [ -f exec.sh ]; then
             git config --global user.name "Vessel-Agent"
             git config --global user.email "agent@vessel.bot"
-            echo "--- 正在執行 AI 生成的指令 ---"
+            # 使用 GITHUB_TOKEN 讓 gh cli 具備權限
+            echo "${GITHUB_TOKEN}" | gh auth login --with-token
             bash exec.sh
+            # 任務完成後，自動在來源處留言回報 (如果是 Issue)
+            if [ "${{ github.event_name }}" == "issue_comment" ] || [ "${{ github.event_name }}" == "issues" ]; then
+              gh issue comment ${{ github.event.issue.number }} --body "✅ 任務執行完成，邏輯已同步至 README 與 Variables。"
+            fi
           fi
