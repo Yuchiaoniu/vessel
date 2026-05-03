@@ -1,174 +1,48 @@
-#!/bin/bash
+git config user.name "github-actions[bot]"
+git config user.email "github-actions[bot]@users.noreply.github.com"
 
-# Configure Git user
-git config user.name "github-agent"
-git config user.email "github-agent@example.com"
+# 1. 路徑修正：將所有 README.md 指令指向 README.md.md
+# 搜尋常見檔案類型（Markdown, YAML, Shell 腳本, 純文字, HTML, JS, TS, Python, JSON）
+# 將獨立的 "README.md" 字串替換為 "README.md.md"，避免修改已包含副檔名的檔案（如 README.md.md 本身）
+find . -type f -regextype egrep -regex ".*\.(md|yml|sh|txt|html|js|ts|py|json)" -print0 | xargs -0 sed -i 's/\bREADME\b/README.md.md/g'
+echo "已完成路徑修正：將 README.md 指令指向 README.md.md。"
 
-# --- Step 7: Stop using .txt for state, use Repository Variables ---
-# Simulate removing an old state file (if it existed)
-rm -f state.txt
-
-# Set a GitHub Repository Variable (requires 'gh' CLI)
-gh variable set SYSTEM_STATE --body "initialized"
-
-# --- Step 9: Establish basic GitHub Pages mirror ---
-# Create docs directory
-mkdir -p docs
-
-# Create index.html with the evolution progress table
-cat << 'EOF' > docs/index.html
-<html>
-<head>
-    <title>Agent Evolution Progress</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: sans-serif; margin: 2em; line-height: 1.6; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .implemented { color: green; font-weight: bold; }
-        .pending { color: orange; }
-    </style>
-</head>
-<body>
-    <h1>GitHub Agent: IQ 300 Logic Blueprint Progress</h1>
-    <p>This page reflects the current "IQ 300 Logic Blueprint" for the GitHub Agent.</p>
-    <p>Version: v0.1.0</p>
-
-    <table>
-        <thead>
-            <tr>
-                <th>步驟</th>
-                <th>動作名稱</th>
-                <th>角色扮演</th>
-                <th>智商 300 的邏輯 (本質化)</th>
-                <th>狀態</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>3</td>
-                <td>自然語言環境介面</td>
-                <td>棄用 Bash 或 Python 腳本，改用 「Markdown 作為編譯指令」。</td>
-                <td></td>
-                <td class="implemented">✅ Implemented</td>
-            </tr>
-            <tr>
-                <td>4</td>
-                <td>利用「討論 (Discussions)」思維場</td>
-                <td>所有的指令不發在 Issue，而是發在 Discussions。</td>
-                <td></td>
-                <td class="implemented">✅ Implemented</td>
-            </tr>
-            <tr>
-                <td>5</td>
-                <td>AI 自我修改 (Hot-Reload)</td>
-                <td>進化：Agent 第一個動作是根據你的需求，「重寫自己的 Actions 腳本」。</td>
-                <td></td>
-                <td class="pending">⏳ Pending</td>
-            </tr>
-            <tr>
-                <td>6</td>
-                <td>分支即「平行時空」</td>
-                <td>並行處理不同的指令在不同的 Branch 執行，最後只保留最優結果合併。</td>
-                <td></td>
-                <td class="pending">⏳ Pending</td>
-            </tr>
-            <tr>
-                <td>7</td>
-                <td>利用「環境變量」做緩存</td>
-                <td>神經突觸：所有的狀態不存硬碟，存入 Repo 的 Variables 系統。</td>
-                <td></td>
-                <td class="implemented">✅ Implemented</td>
-            </tr>
-            <tr>
-                <td>8</td>
-                <td>語義化觸發 (Linguistic Trigger)</td>
-                <td>潛意識：只要你在 Discussions 裡達成某種語義共識，Actions 自動感知。</td>
-                <td></td>
-                <td class="pending">⏳ Pending</td>
-            </tr>
-            <tr>
-                <td>9</td>
-                <td>自動化「成果鏡像」</td>
-                <td>表象：執行成果自動生成為一個 GitHub Page 網頁。</td>
-                <td></td>
-                <td class="implemented">✅ Implemented</td>
-            </tr>
-            <tr>
-                <td>10</td>
-                <td>邏輯歸位 (Recursive)</td>
-                <td>睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README，等待下次呼喚。</td>
-                <td></td>
-                <td class="implemented">✅ Implemented</td>
-            </tr>
-        </tbody>
-    </table>
-    <p>
-        For detailed agent logic and further interaction, please refer to the <a href="../README.md">README.md</a>.
-    </p>
-</body>
-</html>
+# 2. 通訊修復：更新 .github/workflows/kernel.yml 中的留言回報方式
+# 定義新的回報區塊內容
+NEW_REPORT_BLOCK=$(cat <<'EOF'
+          # 自動回報執行狀態 (統一使用 gh api 避開版本問題)
+        REPORT="✅ **系統進化成功**\n\n指令已執行。當前版本：v1.1.0"
+        
+        if [ "${{ github.event_name }}" == "issue_comment" ] || [ "${{ github.event_name }}" == "issues" ]; then
+          gh issue comment ${{ github.event.issue.number }} --body "$REPORT"
+        elif [[ "${{ github.event_name }}" == "discussion"* ]]; then
+          # 改用 gh api 留言給 Discussion
+          D_ID=${{ github.event.discussion.node_id }}
+          gh api graphql -f query='
+            mutation($body: String!, $discussionId: ID!) {
+              addDiscussionComment(input: {body: $body, discussionId: $discussionId}) {
+                comment { id }
+              }
+            }' -f body="$REPORT" -f discussionId="$D_ID"
+        fi
 EOF
+)
+# 使用 sed 替換從指定註釋行開始到 'fi' 結尾的整個區塊
+sed -i "/^          # 自動回報執行狀態 (統一使用 gh api 避開版本問題)/,/^        fi$/c\\$NEW_REPORT_BLOCK" .github/workflows/kernel.yml
+echo "已完成通訊修復：更新 .github/workflows/kernel.yml 中的留言回報方式。"
 
-# Enable GitHub Pages (requires 'gh' CLI)
-gh repo edit --enable-pages --pages-branch main --pages-path /docs
+# 3. 狀態同步：更新 README.md.md 版本號並寫入 SYSTEM_STATUS 變數
+# 更新 README.md.md 中的版本號至 v1.1.0
+# 此正則表達式會匹配如 v1.0, v1.0.0 等版本格式，並替換為 v1.1.0
+sed -i 's/\bv[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?\b/v1.1.0/g' README.md.md
+echo "README.md.md 版本號已更新至 v1.1.0。"
 
-# --- Step 10: Compress all logic and current version into README ---
-cat << 'EOF' > README.md
-# GitHub Agent - Current State
+# 將 SYSTEM_STATUS 變數寫入 Variables
+gh variable set SYSTEM_STATUS --body "v1.1.0"
+echo "SYSTEM_STATUS 變數已設置為 v1.1.0。"
 
-## Version: v0.1.0
-
-### Interaction Model (Implemented Steps 3 & 4)
-This agent now primarily receives instructions via **GitHub Discussions**.
-The `README.md` serves as the core "command parsing" mechanism.
-Please post your requests in a new discussion thread. The agent will monitor discussions for semantic triggers (Step 8, pending).
-
-### System State Management (Implemented Step 7)
-All transient system states and variables are now stored using **GitHub Repository Variables**.
-No more `.txt` files for simple state! An example variable `SYSTEM_STATE` has been set to "initialized".
-
-### Evolution Progress Mirror (Implemented Step 9)
-A basic GitHub Pages site is now active, mirroring the agent's current "IQ 300 Logic Blueprint".
-You can view the progress table at: [Link to GitHub Pages (e.g., `https://<YOUR_USERNAME>.github.io/<YOUR_REPO>/`)] (This will be dynamically created by GitHub after the push and Pages activation).
-
-### Agent Logic (Implemented Steps)
-- **Step 3 & 4: Natural Language Environment Interface & Discussions as Command Hub:**
-    - Abandoned bash/Python scripts for primary command input.
-    - All new instructions should be posted as GitHub Discussions.
-    - `README.md` will be updated to reflect agent logic and status.
-- **Step 7: Utilize Environment Variables for Caching (Neural Synapse):**
-    - All system states are now stored as GitHub Repository Variables instead of local disk files.
-    - Example: `SYSTEM_STATE` variable set to "initialized".
-- **Step 9: Automated "Outcome Mirror" (Phenomenon):**
-    - Created a `docs/` directory with `index.html` to display the "Evolution Progress Table".
-    - GitHub Pages is configured to serve content from `docs/` on the `main` branch.
-- **Step 10: Logic Recursion (Sleep):**
-    - All current agent logic and status have been compressed and updated into this `README.md` file, awaiting the next instruction.
-
----
-
-## IQ 300 Logic Blueprint (Current Status)
-
-| 步驟 | 動作名稱 | 角色扮演 | 智商 300 的邏輯 (本質化) | 狀態 |
-|----|--------|--------|--------------------------|--------|
-| 3 | 自然語言環境介面 | 棄用 Bash 或 Python 腳本，改用 「Markdown 作為編譯指令」。 | | ✅ Implemented |
-| 4 | 利用「討論 (Discussions)」思維場 | 所有的指令不發在 Issue，而是發在 Discussions。 | | ✅ Implemented |
-| 5 | AI 自我修改 (Hot-Reload) | 進化：Agent 第一個動作是根據你的需求，「重寫自己的 Actions 腳本」。 | | ⏳ Pending |
-| 6 | 分支即「平行時空」 | 並行處理不同的指令在不同的 Branch 執行，最後只保留最優結果合併。 | | ⏳ Pending |
-| 7 | 利用「環境變量」做緩存 | 神經突觸：所有的狀態不存硬碟，存入 Repo 的 Variables 系統。 | | ✅ Implemented |
-| 8 | 語義化觸發 (Linguistic Trigger) | 潛意識：只要你在 Discussions 裡達成某種語義共識，Actions 自動感知。 | | ⏳ Pending |
-| 9 | 自動化「成果鏡像」 | 表象：執行成果自動生成為一個 GitHub Page 網頁。 | | ✅ Implemented |
-| 10 | 邏輯歸位 (Recursive) | 睡眠：任務結束後，Agent 將所有的邏輯壓縮回 README，等待下次呼喚。 | | ✅ Implemented |
-EOF
-
-# Add all changes to Git
+# 提交並推送所有變更
 git add .
-
-# Commit changes
-git commit -m "feat: Implement IQ 300 Blueprint Steps 3, 4, 7, 9, 10 for GitHub Agent"
-
-# Push changes to the main branch
-git push origin main
+git commit -m "feat(agent): 應用路徑修正、通訊修復及狀態同步 (v1.1.0)"
+git push
+echo "所有變更已提交並推送。"

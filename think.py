@@ -1,34 +1,37 @@
-import os
-import json
-import requests
+import os, json, requests
 
 api_key = os.environ["GEMINI_API_KEY"]
-issue_body = os.environ["ISSUE_BODY"]
+event_body = os.environ["EVENT_BODY"]
 
-# 1. 徹底檢查所有版本的所有模型
+# 1. 動態鎖定當前最穩定的 Gemini 模型
 found_model = None
 for v in ["v1beta", "v1"]:
-    list_url = f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}"
-    resp = requests.get(list_url).json()
-    if 'models' in resp:
-        for m in resp['models']:
-            # 優先找 flash，其次找 pro，只要能生成內容就行
-            if 'generateContent' in m.get('supportedGenerationMethods', []):
-                found_model = (v, m['name'])
-                if 'flash' in m['name'].lower():
-                    break
-    if found_model: break
+    try:
+        resp = requests.get(f"https://generativelanguage.googleapis.com/{v}/models?key={api_key}").json()
+        if 'models' in resp:
+            for m in resp['models']:
+                if 'generateContent' in m.get('supportedGenerationMethods', []):
+                    found_model = (v, m['name'])
+                    if 'flash' in m['name'].lower(): break
+        if found_model: break
+    except: continue
 
 if not found_model:
-    print("關鍵錯誤：此 API Key 找不到任何支援生成內容的模型。請確認 AI Studio 權限。")
+    print("Critical Error: No capable model found.")
     exit(1)
 
+# 2. 構建神諭：要求 AI 以 Bash 形式輸出解決方案
 version, model_path = found_model
-print(f"成功鎖定目標：版本={version}, 路徑={model_path}")
-
-# 2. 執行指令生成
 url = f"https://generativelanguage.googleapis.com/{version}/{model_path}:generateContent?key={api_key}"
-prompt = f"你是一個 GitHub Agent。主人指令：{issue_body}\n請輸出達成目標的 bash 指令（需含 git config/add/commit/push），只輸出代碼，不要解釋。"
+
+# 提供系統上下文：告訴 AI 它現在擁有最高權限與 gh cli 工具
+system_context = (
+    "你是一個擁有管理員權限的 GitHub Agent。你現在可以使用 'gh variable set' 管理狀態，"
+    "可以使用 git 修改任何檔案。請根據主人指令輸出 bash 代碼。"
+    "規則：只輸出代碼，不要包含 Markdown 區塊標籤，確保指令可以直接執行。"
+)
+
+prompt = f"{system_context}\n\n主人指令：{event_body}"
 
 payload = {"contents": [{"parts": [{"text": prompt}]}]}
 response = requests.post(url, json=payload)
@@ -36,7 +39,9 @@ data = response.json()
 
 if 'candidates' in data:
     text = data['candidates'][0]['content']['parts'][0]['text']
+    # 清理 AI 可能誤加的 markdown 標籤
+    clean_code = text.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
     with open("exec.sh", "w") as f:
-        f.write(text.replace('```bash', '').replace('```sh', '').replace('```', '').strip())
+        f.write(clean_code)
 else:
-    print(f"請求失敗：{json.dumps(data, indent=2)}")
+    print(f"Generation Failed: {json.dumps(data)}")
