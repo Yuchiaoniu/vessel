@@ -22,32 +22,62 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_BODY: ${{ github.event.issue.body || github.event.comment.body }}
         run: |
-          # 1. 建立一個簡單的 Python 環境來呼叫 Gemini
-          python3 -m pip install -q -U google-generativeai
-
-          # 2. 執行核心自舉腳本 (這段指令告訴 Gemini：讀取指令，並產出要執行的 Bash)
-          python3 <<EOF
-          import google.generativeai as genai
+          # 1. 建立一個乾淨的指令提取 Python 腳本 (直接處理 JSON)
+          cat << 'EOF' > think.py
           import os
-          import subprocess
+          import json
+          import requests
 
-          genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-          model = genai.GenerativeModel('gemini-1.5-flash')
+          api_key = os.environ["GEMINI_API_KEY"]
+          issue_body = os.environ["ISSUE_BODY"]
           
-          # 提供環境上下文給 Gemini
-          context = f"""
-          你是一個能自我修改的 GitHub Agent。目前的環境是 Ubuntu 虛擬機。
-          主人的指令是：{os.environ["ISSUE_BODY"]}
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
           
-          請只輸出可以在 bash 中執行的指令（包含 git commit），不要有任何解釋。
-          如果需要寫代碼，請使用 'cat <<EOT > filename' 的方式寫入檔案。
-          執行完畢後，請回覆執行結果到 Issue 中。
+          prompt = f"""
+          你是一個 GitHub 自動化 Agent。
+          當前目標：{issue_body}
+          
+          請寫出達成目標所需的 bash 指令（例如 cat、git add、git commit）。
+          
+          規則：
+          1. 只輸出代碼，不要解釋。
+          2. 必須包含 git 配置和提交指令：
+             git config --global user.name "Vessel-Agent"
+             git config --global user.email "agent@vessel.bot"
+             git add .
+             git commit -m "AI: 執行進化指令" || echo "無變動"
+             git push
           """
           
-          response = model.generate_content(context)
-          with open("exec.sh", "w") as f:
-              f.write(response.text.strip().replace('```bash', '').replace('```', ''))
+          payload = {
+              "contents": [{
+                  "parts": [{"text": prompt}]
+              }]
+          }
+          
+          response = requests.post(url, json=payload)
+          data = response.json()
+          
+          # 提取回傳的文字並清理格式
+          try:
+              raw_text = data['candidates'][0]['content']['parts'][0]['text']
+              clean_text = raw_text.replace('```bash', '').replace('```', '').strip()
+              with open("exec.sh", "w") as f:
+                  f.write(clean_text)
+          except Exception as e:
+              print(f"解析失敗: {data}")
+              raise e
           EOF
 
-          # 3. 執行 Gemini 生成的進化指令
-          bash exec.sh
+          # 2. 執行 Python 腳本來請求 Gemini
+          python3 think.py
+
+          # 3. 執行 Gemini 生成的指令
+          if [ -f exec.sh ]; then
+            echo "--- 執行生成的指令 ---"
+            cat exec.sh
+            bash exec.sh
+          else
+            echo "未能生成 exec.sh"
+            exit 1
+          fi
