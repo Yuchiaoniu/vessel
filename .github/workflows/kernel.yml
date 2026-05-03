@@ -83,6 +83,6 @@ jobs:
             # 4. 穩定的 GraphQL 回報系統
             if [ ! -z "$D_NODE_ID" ]; then
               gh api graphql -f query='mutation($body: String!, $id: ID!) { addDiscussionComment(input: {body: $body, discussionId: $id}) { comment { id } } }' \
-                -f body="✅ **執行報告**：腳本已完成過濾與部署。請檢查 README 或 Variables 狀態。" -f id="$D_NODE_ID"
+                -f body="✅ **執行報告**：腳本已完成過濾與部署。請檢查 README.md.md 或 Variables 狀態。" -f id="$D_NODE_ID"
             fi
           fi
