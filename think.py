@@ -1,9 +1,8 @@
 import os, json, requests, re
 
-api_key = os.environ["GEMINI_API_KEY"]
-event_body = os.environ["EVENT_BODY"]
+api_key = os.environ.get("GEMINI_API_KEY")
+event_body = os.environ.get("EVENT_BODY", "")
 
-# 1. 自動探測可用的 Gemini 模型
 found_model = None
 for v in ["v1beta", "v1"]:
     try:
@@ -15,29 +14,21 @@ for v in ["v1beta", "v1"]:
         if found_model: break
     except: continue
 
-if not found_model: exit(1)
+if not found_model:
+    print("Error: No Model Found")
+    exit(1)
 
-# 2. 設定 AI 思考邏輯
 url = f"https://generativelanguage.googleapis.com/{found_model[0]}/{found_model[1]}:generateContent?key={api_key}"
-prompt = f"指令：{event_body}\n核心規則：你是 Linux 終端機，只能輸出 Bash 代碼。禁止輸出任何自然語言說明。變數同步使用 'gh variable set 變數名 --body 內容'。禁止使用 --repository 參數。"
+prompt = f"指令：{event_body}\n規則：你是 Linux 專家。只輸出 Bash 代碼，禁止廢話。必須包含 git add, commit, push 指令來更新 README.md。"
 
-response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-data = response.json()
-
-if 'candidates' in data:
+try:
+    response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+    data = response.json()
     raw_text = data['candidates'][0]['content']['parts'][0]['text']
-    # 移除 Markdown 代碼塊標籤
     clean_text = re.sub(r'```[a-zA-Z]*', '', raw_text).replace('```', '').strip()
     
-    # 【重點修改：白名單過濾】
-    # 以前是過濾中文，現在改為檢查每一行是否以合法的 Bash 指令開頭
-    bash_whitelist = ["git", "gh", "echo", "printf", "cd", "rm", "python", "cat", "mv", "mkdir", "ls", "export"]
-    lines = []
-    for line in clean_text.split('\n'):
-        stripped = line.strip()
-        # 只要是以白名單指令或路徑開頭的行，就予以保留，不論內容是否有中文
-        if any(stripped.startswith(cmd) for cmd in bash_whitelist) or stripped.startswith("./"):
-            lines.append(line)
-    
+    # 這裡採用更寬鬆的保留策略，確保指令不被誤刪
     with open("exec.sh", "w") as f:
-        f.write('\n'.join(lines))
+        f.write(clean_text)
+except Exception as e:
+    print(f"Thinking Error: {e}")
