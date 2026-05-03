@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VESSEL_AGENT_Component_A</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; background-color: #f0f0f0; color: #333; }
+        h1 { color: #0056b3; margin-bottom: 20px; }
+        canvas { border: 2px solid #0056b3; margin-top: 20px; background-color: #fff; }
+        video { display: none; } /* Hide video, only show canvas */
+        #status { margin-top: 10px; font-weight: bold; color: #555; }
+    </style>
+</head>
+<body>
+    <h1>VESSEL_AGENT: 商轉組件 A (OpenCV.js 介面)</h1>
+    <p id="status">載入 OpenCV.js ...</p>
+    <video id="videoInput" playsinline autoplay></video>
+    <canvas id="canvasOutput"></canvas>
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+    <script>
+        let video = document.getElementById('videoInput');
+        let cap = null;
+        let streaming = false;
+        let src = null;
+        let dst = null;
+        let gray = null;
+        let statusElement = document.getElementById('status');
+
+        function onOpenCvReady() {
+            statusElement.innerHTML = 'OpenCV.js 已準備就緒.';
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                    .then(function(stream) {
+                        video.srcObject = stream;
+                        video.play();
+                    })
+                    .catch(function(err) {
+                        console.error("發生錯誤: ", err);
+                        statusElement.innerHTML = '相機存取被拒絕: ' + err.name;
+                    });
+            } else {
+                alert('您的瀏覽器不支援 getUserMedia.');
+                statusElement.innerHTML = 'getUserMedia 不受支援.';
+            }
+        }
+
+        video.addEventListener('canplay', function(ev) {
+            if (!streaming && typeof cv !== 'undefined' && cv.Mat) {
+                let width = video.videoWidth;
+                let height = video.videoHeight;
+                video.setAttribute('width', width);
+                video.setAttribute('height', height);
+
+                let canvas = document.getElementById('canvasOutput');
+                canvas.width = width;
+                canvas.height = height;
+
+                src = new cv.Mat(height, width, cv.CV_8UC4);
+                dst = new cv.Mat(height, width, cv.CV_8UC4);
+                gray = new cv.Mat(height, width, cv.CV_8UC1);
+
+                cap = new cv.VideoCapture(video);
+                statusElement.innerHTML = '相機串流已啟動，開始處理...';
+                requestAnimationFrame(processVideo);
+                streaming = true;
+            } else if (typeof cv === 'undefined' || !cv.Mat) {
+                 statusElement.innerHTML = 'OpenCV.js 尚未完全載入或初始化。';
+                 console.error('OpenCV.js is not ready yet.');
+            }
+        }, false);
+
+        function processVideo() {
+            if (!streaming || !cap || !src || !dst || !gray) {
+                return;
+            }
+            try {
+                cap.read(src);
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+                cv.imshow('canvasOutput', gray);
+            } catch (err) {
+                console.error("OpenCV 處理錯誤: ", err);
+                statusElement.innerHTML = 'OpenCV 處理錯誤: ' + err.message;
+            }
+            requestAnimationFrame(processVideo);
+        }
+
+        window.addEventListener('beforeunload', function() {
+            if (streaming) {
+                if (src) src.delete();
+                if (dst) dst.delete();
+                if (gray) gray.delete();
+                cap = null;
+                streaming = false;
+                console.log('OpenCV resources cleaned up.');
+            }
+        });
+    </script>
+</body>
+</html>
