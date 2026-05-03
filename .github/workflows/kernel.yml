@@ -19,6 +19,9 @@ jobs:
   evolve:
     runs-on: ubuntu-latest
     steps:
+        - name: Skip self-triggered actions
+          if: github.actor == 'github-actions[bot]'
+          run: exit 0
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
