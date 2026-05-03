@@ -22,7 +22,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_BODY: ${{ github.event.issue.body || github.event.comment.body }}
         run: |
-          # 1. 建立一個乾淨的指令提取 Python 腳本 (直接處理 JSON)
           cat << 'EOF' > think.py
           import os
           import json
@@ -31,22 +30,14 @@ jobs:
           api_key = os.environ["GEMINI_API_KEY"]
           issue_body = os.environ["ISSUE_BODY"]
           
-          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+          # 嘗試使用 v1 版本的 gemini-1.5-flash，這是目前最穩定的路徑
+          url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
           
           prompt = f"""
-          你是一個 GitHub 自動化 Agent。
-          當前目標：{issue_body}
-          
-          請寫出達成目標所需的 bash 指令（例如 cat、git add、git commit）。
-          
-          規則：
-          1. 只輸出代碼，不要解釋。
-          2. 必須包含 git 配置和提交指令：
-             git config --global user.name "Vessel-Agent"
-             git config --global user.email "agent@vessel.bot"
-             git add .
-             git commit -m "AI: 執行進化指令" || echo "無變動"
-             git push
+          你是一個 GitHub Agent。主人指令：{issue_body}
+          請寫出 bash 指令來達成目標。
+          必須包含 git config, git add, git commit, git push。
+          只輸出代碼，不要解釋。
           """
           
           payload = {
@@ -58,26 +49,38 @@ jobs:
           response = requests.post(url, json=payload)
           data = response.json()
           
-          # 提取回傳的文字並清理格式
+          if 'error' in data:
+              # 如果 flash 失敗，自動降級嘗試 pro 版本
+              print(f"Flash 嘗試失敗，更換路徑中...")
+              url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}"
+              response = requests.post(url, json=payload)
+              data = response.json()
+
           try:
               raw_text = data['candidates'][0]['content']['parts'][0]['text']
-              clean_text = raw_text.replace('```bash', '').replace('```', '').strip()
+              # 清理 Markdown 代碼塊
+              clean_text = raw_text.replace('```bash', '').replace('```sh', '').replace('```', '').strip()
               with open("exec.sh", "w") as f:
                   f.write(clean_text)
           except Exception as e:
-              print(f"解析失敗: {data}")
+              print(f"API 回傳內容: {json.dumps(data, indent=2)}")
               raise e
           EOF
 
-          # 2. 執行 Python 腳本來請求 Gemini
           python3 think.py
 
-          # 3. 執行 Gemini 生成的指令
           if [ -f exec.sh ]; then
-            echo "--- 執行生成的指令 ---"
+            # 防止 Gemini 生成危險指令或空指令，先檢查內容
+            echo "--- Gemini 生成的指令內容 ---"
             cat exec.sh
+            
+            # 設定 Git 身份，避免執行時出錯
+            git config --global user.name "Vessel-Agent"
+            git config --global user.email "agent@vessel.bot"
+            
+            # 執行指令
             bash exec.sh
           else
-            echo "未能生成 exec.sh"
+            echo "Failed to create exec.sh"
             exit 1
           fi
